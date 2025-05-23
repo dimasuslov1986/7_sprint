@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCafeNegative(t *testing.T) {
@@ -46,5 +48,73 @@ func TestCafeWhenOk(t *testing.T) {
 		handler.ServeHTTP(response, req)
 
 		assert.Equal(t, http.StatusOK, response.Code)
+
+	}
+}
+
+func TestCafeCount(t *testing.T) {
+	handler := http.HandlerFunc(mainHandle)
+
+	requests := []struct {
+		count int // передаваемое значение count
+		want  int // ожидаемое количество кафе в ответе
+	}{
+		{0, 0},
+		{1, 1},
+		{2, 2},
+		{100, len(cafeList["moscow"])},
+	}
+
+	for _, v := range requests {
+		response := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", fmt.Sprintf("/cafe?city=moscow&count=%d", v.count), nil)
+		handler.ServeHTTP(response, req)
+
+		require.Equal(t, http.StatusOK, response.Code)
+
+		if response.Body.String() == "" {
+			assert.Equal(t, v.want, 0)
+			// переходим к следующей итерации цикла, что бы не "" не ушло в следующий assert.Equal в цикле
+			continue
+		}
+		// при разбитии пустой строки на слайс , длина такого слайса равна 1, из-за этого возникает ошибка.
+		// поэтому выше добавляю проверку на пустую строку, и из нее вывод assert.Equal
+		assert.Equal(t, v.want, len(strings.Split(response.Body.String(), ",")))
+
+	}
+}
+
+func TestCafeSearch(t *testing.T) {
+	handler := http.HandlerFunc(mainHandle)
+
+	requests := []struct {
+		search    string // передаваемое значение search
+		wantCount int    // ожидаемое количество кафе в ответе
+	}{
+		{"фасоль", 0},
+		{"кофе", 2},
+		{"вилка", 1},
+	}
+
+	for _, v := range requests {
+		response := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", fmt.Sprintf("/cafe?city=moscow&search=%s", v.search), nil)
+		handler.ServeHTTP(response, req)
+		require.Equal(t, http.StatusOK, response.Code)
+
+		if response.Body.String() == "" {
+			assert.Equal(t, v.wantCount, 0)
+			// переходим к следующей итерации цикла, что бы не "" не ушло в следующий assert.Equal в цикле
+			continue
+		}
+
+		cafes := strings.Split(response.Body.String(), ",")
+		for _, cafe := range cafes {
+			assert.True(t, strings.Contains(strings.ToLower(cafe), v.search))
+			// Postman показывает вне зависимости от регистра 😔
+		}
+
+		assert.Equal(t, v.wantCount, len(strings.Split(response.Body.String(), ",")))
+
 	}
 }
